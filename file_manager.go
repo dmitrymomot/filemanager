@@ -7,23 +7,31 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"golang.org/x/sync/errgroup"
 )
 
-// default access control list for new objects
-const defaultACL = "public-read"
+const (
+	// default access control list for new objects
+	DefaultACL = "public-read"
+	// default max file size for multipart form upload
+	// 64MB
+	DefaultMaxFileSize = 64 << 20 // 64MB
+)
 
 type (
 	// FileManager represents a file manager that interacts with an S3 bucket.
 	FileManager struct {
-		s3          *s3.S3
+		s3          S3Client
+		httpClient  httpClient
 		cdnURL      string
 		bucket      string
 		basePath    string
@@ -56,20 +64,28 @@ type (
 		// MaxFileSize is the maximum allowed file size for the S3 client.
 		MaxFileSize int64
 	}
+
+	// S3 client interface
+	S3Client interface {
+		PutObjectWithContext(ctx aws.Context, input *s3.PutObjectInput, opts ...request.Option) (*s3.PutObjectOutput, error)
+		ListObjectsV2WithContext(ctx aws.Context, input *s3.ListObjectsV2Input, opts ...request.Option) (*s3.ListObjectsV2Output, error)
+		HeadObjectWithContext(ctx aws.Context, input *s3.HeadObjectInput, opts ...request.Option) (*s3.HeadObjectOutput, error)
+		DeleteObjectWithContext(ctx aws.Context, input *s3.DeleteObjectInput, opts ...request.Option) (*s3.DeleteObjectOutput, error)
+	}
+
+	// httpClient interface
+	httpClient interface {
+		Get(url string) (resp *http.Response, err error)
+	}
+
+	// FileManagerOption represents a file manager option function.
+	FileManagerOption func(*FileManager) error
 )
 
 // New creates a new instance of FileManager with the provided configuration.
 // It initializes a storage session using the AWS SDK and returns a FileManager object.
 // The FileManager object is used to interact with the specified S3 bucket.
 func New(cnf Config) (*FileManager, error) {
-	// validate configuration
-	if cnf.MaxFileSize == 0 {
-		cnf.MaxFileSize = 64 << 20 // 64MB
-	}
-	if cnf.Bucket == "" {
-		return nil, errors.Join(ErrInvalidS3ClientConfig, ErrMissedBucketName)
-	}
-
 	// create new storage session with the provided configuration
 	newSession, err := session.NewSession(&aws.Config{
 		Credentials:      credentials.NewStaticCredentials(cnf.FileManagerKey, cnf.FileManagerSecret, ""),
@@ -82,13 +98,44 @@ func New(cnf Config) (*FileManager, error) {
 		return nil, errors.Join(ErrInvalidS3ClientConfig, err)
 	}
 
-	return &FileManager{
-		s3:          s3.New(newSession),
-		cdnURL:      strings.Trim(cnf.CDNURL, "/"),
-		bucket:      cnf.Bucket,
-		basePath:    strings.Trim(cnf.BasePath, "/"),
-		maxFileSize: cnf.MaxFileSize,
-	}, nil
+	return NewWithOptions(
+		WithS3Client(s3.New(newSession)),
+		WithBucketName(cnf.Bucket),
+		WithCDNURL(cnf.CDNURL),
+		WithBasePath(cnf.BasePath),
+		WithMaxFileSize(cnf.MaxFileSize),
+	)
+}
+
+// NewWithS3Client creates a new instance of FileManager with the provided S3 client.
+// It returns a FileManager object that is used to interact with the specified S3 bucket.
+func NewWithOptions(opt ...FileManagerOption) (*FileManager, error) {
+	// create new file manager
+	fm := &FileManager{
+		httpClient:  http.DefaultClient,
+		maxFileSize: DefaultMaxFileSize, // 64MB
+		basePath:    "uploads",
+	}
+
+	// apply options
+	for _, o := range opt {
+		if err := o(fm); err != nil {
+			return nil, errors.Join(ErrInvalidS3ClientConfig, err)
+		}
+	}
+
+	// validate configuration
+	if fm.bucket == "" {
+		return nil, errors.Join(ErrInvalidS3ClientConfig, ErrMissedBucketName)
+	}
+	if fm.s3 == nil {
+		return nil, errors.Join(ErrInvalidS3ClientConfig, ErrMissedS3Client)
+	}
+	if fm.cdnURL == "" {
+		return nil, errors.Join(ErrInvalidS3ClientConfig, ErrMissedCDNURL)
+	}
+
+	return fm, nil
 }
 
 // Upload uploads a file to the S3 bucket.
@@ -96,7 +143,7 @@ func New(cnf Config) (*FileManager, error) {
 // It returns the URL of the uploaded file and any error encountered during the upload process.
 func (fm *FileManager) Upload(ctx context.Context, file io.ReadSeeker, filename, contentType string) (string, error) {
 	_, err := fm.s3.PutObjectWithContext(ctx, &s3.PutObjectInput{
-		ACL:         aws.String(defaultACL),
+		ACL:         aws.String(DefaultACL),
 		Body:        file,
 		ContentType: aws.String(contentType),
 		Bucket:      aws.String(fm.bucket),
@@ -134,26 +181,12 @@ func (fm *FileManager) UploadFromMultipartForm(r *http.Request, fieldName string
 	}
 	defer file.Close()
 
-	// Read the first 512 bytes to determine the file type
-	buf := make([]byte, 512)
-	if _, err := file.Read(buf); err != nil {
-		return "", errors.Join(ErrFailedToUploadFileFromMultipartForm, err)
-	}
-
-	// Detect the content type
-	contentType := http.DetectContentType(buf)
-
-	// Seek back to the start of the file
-	if _, err := file.Seek(0, 0); err != nil {
-		return "", errors.Join(ErrFailedToUploadFileFromMultipartForm, err)
-	}
-
 	// Upload the file to the S3 bucket
 	result, err := fm.Upload(
 		r.Context(),
 		file,
 		filepath.Base(header.Filename),
-		contentType,
+		header.Header.Get("Content-Type"),
 	)
 	if err != nil {
 		return "", errors.Join(ErrFailedToUploadFileFromMultipartForm, err)
@@ -166,7 +199,7 @@ func (fm *FileManager) UploadFromMultipartForm(r *http.Request, fieldName string
 // It takes the URL of the file as input and returns the URL of the uploaded file and any error encountered during the upload process.
 func (fm *FileManager) UploadFromURL(ctx context.Context, fileURL string) (string, error) {
 	// get file from URL
-	resp, err := http.Get(fileURL)
+	resp, err := fm.httpClient.Get(fileURL)
 	if err != nil {
 		return "", errors.Join(ErrFailedToUploadFileFromURL, err)
 	}
@@ -182,7 +215,7 @@ func (fm *FileManager) UploadFromURL(ctx context.Context, fileURL string) (strin
 	result, err := fm.Upload(
 		ctx,
 		bytes.NewReader(buf),
-		filenameFromURL(fm.cdnURL, fileURL),
+		path.Base(fileURL),
 		resp.Header.Get("Content-Type"),
 	)
 	if err != nil {
