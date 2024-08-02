@@ -17,9 +17,10 @@ func filenameFromURL(cdnURL, fileURL string) string {
 // It returns an error if the error is not nil.
 // The err is the error to handle.
 func handleS3Error(err error) error {
-	if aerr, ok := err.(awserr.Error); ok {
+	var aerr awserr.Error
+	if errors.As(err, &aerr) {
 		switch aerr.Code() {
-		case "NotFound": // s3.ErrCodeNoSuchKey does not work, aws is missing this error code so we hardwire a string
+		case "NotFound": // s3.ErrCodeNoSuchKey does not work, aws is missing this error code so a string comparison is needed.
 			return ErrNotFound
 		default:
 			return errors.Join(ErrUnexpected, err)

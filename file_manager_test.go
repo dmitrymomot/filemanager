@@ -12,9 +12,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/dmitrymomot/filemanager"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dmitrymomot/filemanager"
 )
 
 // default access control list for new objects
@@ -33,7 +34,11 @@ type mockS3Client struct {
 	mock.Mock
 }
 
-func (m *mockS3Client) PutObjectWithContext(ctx aws.Context, input *s3.PutObjectInput, opts ...request.Option) (*s3.PutObjectOutput, error) {
+func (m *mockS3Client) PutObjectWithContext(
+	ctx aws.Context,
+	input *s3.PutObjectInput,
+	opts ...request.Option,
+) (*s3.PutObjectOutput, error) {
 	args := m.Called(ctx, input, opts)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -41,7 +46,11 @@ func (m *mockS3Client) PutObjectWithContext(ctx aws.Context, input *s3.PutObject
 	return args.Get(0).(*s3.PutObjectOutput), args.Error(1)
 }
 
-func (m *mockS3Client) ListObjectsV2WithContext(ctx aws.Context, input *s3.ListObjectsV2Input, opts ...request.Option) (*s3.ListObjectsV2Output, error) {
+func (m *mockS3Client) ListObjectsV2WithContext(
+	ctx aws.Context,
+	input *s3.ListObjectsV2Input,
+	opts ...request.Option,
+) (*s3.ListObjectsV2Output, error) {
 	args := m.Called(ctx, input, opts)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -49,7 +58,11 @@ func (m *mockS3Client) ListObjectsV2WithContext(ctx aws.Context, input *s3.ListO
 	return args.Get(0).(*s3.ListObjectsV2Output), args.Error(1)
 }
 
-func (m *mockS3Client) HeadObjectWithContext(ctx aws.Context, input *s3.HeadObjectInput, opts ...request.Option) (*s3.HeadObjectOutput, error) {
+func (m *mockS3Client) HeadObjectWithContext(
+	ctx aws.Context,
+	input *s3.HeadObjectInput,
+	opts ...request.Option,
+) (*s3.HeadObjectOutput, error) {
 	args := m.Called(ctx, input, opts)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -57,7 +70,11 @@ func (m *mockS3Client) HeadObjectWithContext(ctx aws.Context, input *s3.HeadObje
 	return args.Get(0).(*s3.HeadObjectOutput), args.Error(1)
 }
 
-func (m *mockS3Client) DeleteObjectWithContext(ctx aws.Context, input *s3.DeleteObjectInput, opts ...request.Option) (*s3.DeleteObjectOutput, error) {
+func (m *mockS3Client) DeleteObjectWithContext(
+	ctx aws.Context,
+	input *s3.DeleteObjectInput,
+	opts ...request.Option,
+) (*s3.DeleteObjectOutput, error) {
 	args := m.Called(ctx, input, opts)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -119,7 +136,7 @@ func TestUploadFromMultipartForm(t *testing.T) {
 	require.NoError(t, err)
 	_, err = file.Write(fileContent)
 	require.NoError(t, err)
-	writer.Close()
+	require.NoError(t, writer.Close())
 
 	req, err := http.NewRequest("POST", "/upload", body)
 	require.NoError(t, err)

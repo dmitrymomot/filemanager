@@ -3,7 +3,7 @@ package filemanager
 import "strings"
 
 // WithS3Client sets the S3 client.
-func WithS3Client(client S3Client) FileManagerOption {
+func WithS3Client(client S3Client) Option {
 	return func(f *FileManager) error {
 		if client == nil {
 			return ErrMissedS3Client
@@ -14,7 +14,7 @@ func WithS3Client(client S3Client) FileManagerOption {
 }
 
 // WithCustomHTTPClient sets the custom HTTP client.
-func WithCustomHTTPClient(client httpClient) FileManagerOption {
+func WithCustomHTTPClient(client httpClient) Option {
 	return func(f *FileManager) error {
 		if client == nil {
 			return ErrMissedHTTPClient
@@ -25,7 +25,7 @@ func WithCustomHTTPClient(client httpClient) FileManagerOption {
 }
 
 // WithBucketName sets the bucket name.
-func WithBucketName(bucketName string) FileManagerOption {
+func WithBucketName(bucketName string) Option {
 	return func(f *FileManager) error {
 		if bucketName == "" {
 			return ErrMissedBucketName
@@ -36,7 +36,7 @@ func WithBucketName(bucketName string) FileManagerOption {
 }
 
 // WithCDNURL sets the CDN URL.
-func WithCDNURL(cdnURL string) FileManagerOption {
+func WithCDNURL(cdnURL string) Option {
 	return func(f *FileManager) error {
 		cdnURL = strings.Trim(cdnURL, "/")
 		if cdnURL == "" {
@@ -50,7 +50,7 @@ func WithCDNURL(cdnURL string) FileManagerOption {
 }
 
 // WithBasePath sets the base path.
-func WithBasePath(basePath string) FileManagerOption {
+func WithBasePath(basePath string) Option {
 	return func(f *FileManager) error {
 		f.basePath = strings.Trim(basePath, "/")
 		return nil
@@ -58,7 +58,7 @@ func WithBasePath(basePath string) FileManagerOption {
 }
 
 // WithMaxFileSize sets the max file size.
-func WithMaxFileSize(maxFileSize int64) FileManagerOption {
+func WithMaxFileSize(maxFileSize int64) Option {
 	return func(f *FileManager) error {
 		if maxFileSize <= 0 {
 			maxFileSize = DefaultMaxFileSize

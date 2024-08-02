@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"path"
 	"path/filepath"
@@ -20,10 +22,9 @@ import (
 )
 
 const (
-	// default access control list for new objects
+	// DefaultACL - default access control list for new objects
 	DefaultACL = "public-read"
-	// default max file size for multipart form upload
-	// 64MB
+	// DefaultMaxFileSize - default max file size for multipart form upload 64MB
 	DefaultMaxFileSize = 64 << 20 // 64MB
 )
 
@@ -65,12 +66,24 @@ type (
 		MaxFileSize int64
 	}
 
-	// S3 client interface
+	// S3Client S3-compatible storage client interface
 	S3Client interface {
-		PutObjectWithContext(ctx aws.Context, input *s3.PutObjectInput, opts ...request.Option) (*s3.PutObjectOutput, error)
-		ListObjectsV2WithContext(ctx aws.Context, input *s3.ListObjectsV2Input, opts ...request.Option) (*s3.ListObjectsV2Output, error)
-		HeadObjectWithContext(ctx aws.Context, input *s3.HeadObjectInput, opts ...request.Option) (*s3.HeadObjectOutput, error)
-		DeleteObjectWithContext(ctx aws.Context, input *s3.DeleteObjectInput, opts ...request.Option) (*s3.DeleteObjectOutput, error)
+		PutObjectWithContext(ctx aws.Context, input *s3.PutObjectInput, opts ...request.Option) (
+			*s3.PutObjectOutput, error,
+		)
+		ListObjectsV2WithContext(
+			ctx aws.Context,
+			input *s3.ListObjectsV2Input,
+			opts ...request.Option,
+		) (*s3.ListObjectsV2Output, error)
+		HeadObjectWithContext(ctx aws.Context, input *s3.HeadObjectInput, opts ...request.Option) (
+			*s3.HeadObjectOutput, error,
+		)
+		DeleteObjectWithContext(
+			ctx aws.Context,
+			input *s3.DeleteObjectInput,
+			opts ...request.Option,
+		) (*s3.DeleteObjectOutput, error)
 	}
 
 	// httpClient interface
@@ -78,8 +91,8 @@ type (
 		Get(url string) (resp *http.Response, err error)
 	}
 
-	// FileManagerOption represents a file manager option function.
-	FileManagerOption func(*FileManager) error
+	// Option represents a file manager option function.
+	Option func(*FileManager) error
 )
 
 // New creates a new instance of FileManager with the provided configuration.
@@ -107,9 +120,11 @@ func New(cnf Config) (*FileManager, error) {
 	)
 }
 
-// NewWithS3Client creates a new instance of FileManager with the provided S3 client.
-// It returns a FileManager object that is used to interact with the specified S3 bucket.
-func NewWithOptions(opt ...FileManagerOption) (*FileManager, error) {
+// NewWithOptions creates a new instance of FileManager with the provided options.
+// It initializes a FileManager object with default values and then applies the provided options.
+// The options are applied in the order they are provided.
+// It returns the FileManager object and any error encountered during initialization and option application.
+func NewWithOptions(opt ...Option) (*FileManager, error) {
 	// create new file manager
 	fm := &FileManager{
 		httpClient:  http.DefaultClient,
@@ -179,7 +194,11 @@ func (fm *FileManager) UploadFromMultipartForm(r *http.Request, fieldName string
 	if err != nil {
 		return "", errors.Join(ErrFailedToUploadFileFromMultipartForm, err)
 	}
-	defer file.Close()
+	defer func(file multipart.File) {
+		if err := file.Close(); err != nil {
+			slog.ErrorContext(r.Context(), "failed to close file", "error", err)
+		}
+	}(file)
 
 	// Upload the file to the S3 bucket
 	result, err := fm.Upload(
@@ -203,7 +222,11 @@ func (fm *FileManager) UploadFromURL(ctx context.Context, fileURL string) (strin
 	if err != nil {
 		return "", errors.Join(ErrFailedToUploadFileFromURL, err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		if err := Body.Close(); err != nil {
+			slog.ErrorContext(ctx, "failed to close response body", "error", err)
+		}
+	}(resp.Body)
 
 	// read file to buffer
 	buf := make([]byte, resp.ContentLength)
