@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -97,7 +98,7 @@ func TestUpload(t *testing.T) {
 		Body:        fileContent,
 		ContentType: aws.String(contentType),
 		Bucket:      aws.String(bucket),
-		Key:         aws.String(filename),
+		Key:         aws.String(fmt.Sprintf("%s/%s", baseURL, filename)),
 	}, mock.Anything).Return(&s3.PutObjectOutput{}, nil)
 
 	// Create a new FileManager instance and inject the mock.
@@ -216,9 +217,9 @@ func TestUploadFromURL(t *testing.T) {
 
 	// Call the UploadFromURL function
 	t.Run("UploadFromURL: with filename", func(t *testing.T) {
-		result, err := fm.UploadFromURL(ctx, fileURL, "")
+		result, err := fm.UploadFromURL(ctx, fileURL, "/avatars/avatar.png")
 		require.NoError(t, err)
-		require.Equal(t, "https://cdn.example.com/uploads/testfile.txt", result)
+		require.Equal(t, "https://cdn.example.com/uploads/avatars/avatar.png", result)
 	})
 
 	// Assert that the expectations were met

@@ -157,6 +157,7 @@ func NewWithOptions(opt ...Option) (*FileManager, error) {
 // It takes the file content as a byte slice, the filename, and the content type as input parameters.
 // It returns the URL of the uploaded file and any error encountered during the upload process.
 func (fm *FileManager) Upload(ctx context.Context, file io.ReadSeeker, filename, contentType string) (string, error) {
+	filename = fm.filePath(filename)
 	_, err := fm.s3.PutObjectWithContext(ctx, &s3.PutObjectInput{
 		ACL:         aws.String(DefaultACL),
 		Body:        file,
@@ -235,7 +236,7 @@ func (fm *FileManager) UploadFromURL(ctx context.Context, fileURL, filename stri
 	}
 
 	if filename == "" {
-		filename = filepath.Base(path.Base(fileURL))
+		filename = path.Base(fileURL)
 	}
 
 	// upload file to storage
@@ -337,5 +338,11 @@ func (fm *FileManager) fileExists(ctx context.Context, filepath string) (bool, e
 // fileAbsolutePath returns the absolute path of a file in the S3 bucket.
 // It takes the filename as input and returns the absolute path of the file.
 func (fm *FileManager) fileAbsolutePath(filename string) string {
-	return fmt.Sprintf("%s/%s/%s", fm.cdnURL, fm.basePath, strings.Trim(filename, "/"))
+	return fmt.Sprintf("%s/%s", fm.cdnURL, strings.Trim(filename, "/"))
+}
+
+// filePath returns the relative path of a file in the S3 bucket.
+// It takes the filename as input and returns the relative path of the file.
+func (fm *FileManager) filePath(filename string) string {
+	return fmt.Sprintf("/%s/%s", fm.basePath, strings.Trim(filename, "/"))
 }
