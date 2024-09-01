@@ -216,7 +216,7 @@ func (fm *FileManager) UploadFromMultipartForm(r *http.Request, fieldName string
 
 // UploadFromURL uploads a file from a URL to the S3 bucket.
 // It takes the URL of the file as input and returns the URL of the uploaded file and any error encountered during the upload process.
-func (fm *FileManager) UploadFromURL(ctx context.Context, fileURL string) (string, error) {
+func (fm *FileManager) UploadFromURL(ctx context.Context, fileURL, filename string) (string, error) {
 	// get file from URL
 	resp, err := fm.httpClient.Get(fileURL)
 	if err != nil {
@@ -234,11 +234,15 @@ func (fm *FileManager) UploadFromURL(ctx context.Context, fileURL string) (strin
 		return "", errors.Join(ErrFailedToUploadFileFromURL, err)
 	}
 
+	if filename == "" {
+		filename = filepath.Base(path.Base(fileURL))
+	}
+
 	// upload file to storage
 	result, err := fm.Upload(
 		ctx,
 		bytes.NewReader(buf),
-		path.Base(fileURL),
+		filename,
 		resp.Header.Get("Content-Type"),
 	)
 	if err != nil {

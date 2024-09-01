@@ -208,9 +208,18 @@ func TestUploadFromURL(t *testing.T) {
 	require.NoError(t, err)
 
 	// Call the UploadFromURL function
-	result, err := fm.UploadFromURL(ctx, fileURL)
-	require.NoError(t, err)
-	require.Equal(t, "https://cdn.example.com/uploads/testfile.txt", result)
+	t.Run("UploadFromURL: empty filename", func(t *testing.T) {
+		result, err := fm.UploadFromURL(ctx, fileURL, "")
+		require.NoError(t, err)
+		require.Equal(t, "https://cdn.example.com/uploads/testfile.txt", result)
+	})
+
+	// Call the UploadFromURL function
+	t.Run("UploadFromURL: with filename", func(t *testing.T) {
+		result, err := fm.UploadFromURL(ctx, fileURL, "")
+		require.NoError(t, err)
+		require.Equal(t, "https://cdn.example.com/uploads/testfile.txt", result)
+	})
 
 	// Assert that the expectations were met
 	mockS3.AssertExpectations(t)
